@@ -44,13 +44,7 @@ pub fn scan(args: Vec<&str>) -> Result<ScanResult, String> {
     let json = args.get(3).map(|a| a == &"-json").unwrap_or(false);
     let output = args.get(4).cloned();
     let lines = scan_with_modes_tui(&mode.to_string(), pid, json, output);
-    let raw: Vec<HeapBlock>;
-
-    if mode == "-h" && granular {
-        raw = crate::os::walk_heap_granular(pid);
-    } else {
-        raw = crate::os::walk_heap(pid);
-    }
+    let raw = get_heap_blocks(pid, granular);
 
     #[cfg(target_os = "windows")]
     let (pointer_blocks, referenced_blocks) = crate::os::find_blocks_with_pointers(pid, &raw);
@@ -143,4 +137,20 @@ pub fn list_processes(args: Vec<&str>) -> Result<Vec<String>, String> {
         ));
     }
     Ok(output)
+}
+
+fn get_heap_blocks(pid: u32, granular: bool) -> Vec<HeapBlock> {
+    #[cfg(target_os = "windows")]
+    {
+        if granular {
+            crate::os::walk_heap_granular(pid)
+        } else {
+            crate::os::walk_heap(pid)
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        crate::os::walk_heap(pid)
+    }
 }

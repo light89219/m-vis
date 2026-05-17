@@ -314,29 +314,7 @@ pub fn walk_heap_granular(pid: u32) -> Vec<HeapBlock> {
 
         CloseHandle(snapshot).ok();
     }
-
-    // log what we found
-    let live: Vec<_> = blocks.iter().filter(|b| !b.is_free).collect();
-    debug_log(&format!(
-        "Heap32 walk: {} total, {} live",
-        blocks.len(),
-        live.len()
-    ));
-    for b in live.iter().take(20) {
-        debug_log(&format!("  0x{:x} size={}", b.address, b.size));
-    }
-
     blocks
-}
-use std::io::Write;
-
-fn debug_log(msg: &str) {
-    let mut f = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("mvis_debug.log")
-        .unwrap();
-    writeln!(f, "{}", msg).ok();
 }
 
 pub fn find_blocks_with_pointers(
