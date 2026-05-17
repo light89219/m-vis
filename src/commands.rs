@@ -14,9 +14,9 @@ pub struct ScanResult {
     pub free_bytes: usize,
     pub frag: f64,
     pub pointer_blocks: std::collections::HashSet<usize>,
+    pub referenced_blocks: std::collections::HashSet<usize>,
 }
 
-use std::collections::HashSet;
 use std::sync::mpsc::Sender;
 
 pub fn leak_m(args: Vec<&str>, tx: Sender<Line<'static>>) -> Result<(), String> {
@@ -40,17 +40,26 @@ pub fn scan(args: Vec<&str>) -> Result<ScanResult, String> {
     let queryp = args[1];
     let pid = find_pid(queryp.to_string())?;
     let mode = args[2];
+    let granular = args.get(3).map(|a| a == &"-g").unwrap_or(false);
     let json = args.get(3).map(|a| a == &"-json").unwrap_or(false);
     let output = args.get(4).cloned();
     let lines = scan_with_modes_tui(&mode.to_string(), pid, json, output);
+    let raw: Vec<HeapBlock>;
 
-    let raw = crate::os::walk_heap(pid);
+    if mode == "-h" && granular {
+        raw = crate::os::walk_heap_granular(pid);
+    } else {
+        raw = crate::os::walk_heap(pid);
+    }
 
     #[cfg(target_os = "windows")]
-    let pointer_blocks = crate::os::find_blocks_with_pointers(pid, &raw);
+    let (pointer_blocks, referenced_blocks) = crate::os::find_blocks_with_pointers(pid, &raw);
 
     #[cfg(target_os = "linux")]
-    let pointer_blocks = std::collections::HashSet::new();
+    let (pointer_blocks, referenced_blocks) = (
+        std::collections::HashSet::new(),
+        std::collections::HashSet::new(),
+    );
 
     // get memory usage from sysinfo
     use sysinfo::System;
@@ -93,6 +102,7 @@ pub fn scan(args: Vec<&str>) -> Result<ScanResult, String> {
         free_bytes,
         frag,
         pointer_blocks,
+        referenced_blocks,
     })
 }
 

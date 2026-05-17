@@ -36,6 +36,7 @@ struct HeapSnapshot {
     largest_used: usize,
     blocks: Vec<HeapBlock>, // store raw blocks for the table
     pointer_blocks: std::collections::HashSet<usize>,
+    pub referenced_blocks: std::collections::HashSet<usize>,
 }
 
 /// App holds the state of the application
@@ -268,7 +269,7 @@ impl App {
                 }
                 Err(e) => self.push_message(format!("Error: {e}")),
             },
-            ["scan", _proc, "-h"] => {
+            ["scan", _proc, "-h"] | ["scan", _proc, "-h", "-g"] => {
                 let proc_name = _proc.to_string();
                 let parts_owned: Vec<String> = parts.iter().map(|s| s.to_string()).collect();
                 let tx = self.tx.clone();
@@ -353,6 +354,7 @@ impl App {
                             largest_free: free.iter().map(|b| b.size).max().unwrap_or(0),
                             blocks: result.blocks,
                             pointer_blocks: result.pointer_blocks,
+                            referenced_blocks: result.referenced_blocks,
                         });
 
                         if self.heap_history.len() > 4 {
@@ -765,8 +767,14 @@ fn render_alloc_table(
             ""
         };
 
-        let tag = if snap.pointer_blocks.contains(&block.address) {
-            "[PTR]"
+        let tag = if snap.pointer_blocks.contains(&block.address)
+            && snap.referenced_blocks.contains(&block.address)
+        {
+            "[PTR+REF]" // contains pointers AND is pointed to by others
+        } else if snap.pointer_blocks.contains(&block.address) {
+            "[PTR]" // contains pointers to other blocks
+        } else if snap.referenced_blocks.contains(&block.address) {
+            "[REF]" // pointed to by other blocks
         } else {
             ""
         };

@@ -263,20 +263,100 @@ pub fn walk_heap(pid: u32) -> Vec<HeapBlock> {
     blocks
 }
 
+pub fn walk_heap_granular(pid: u32) -> Vec<HeapBlock> {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, HEAPENTRY32, HEAPLIST32, Heap32First, Heap32ListFirst,
+        Heap32ListNext, Heap32Next, TH32CS_SNAPHEAPLIST,
+    };
+
+    let mut blocks = Vec::new();
+
+    unsafe {
+        let snapshot = match CreateToolhelp32Snapshot(TH32CS_SNAPHEAPLIST, pid) {
+            Ok(h) => h,
+            Err(_) => return blocks,
+        };
+
+        let mut hl = HEAPLIST32::default();
+        hl.dwSize = std::mem::size_of::<HEAPLIST32>() as usize;
+
+        if Heap32ListFirst(snapshot, &mut hl).is_err() {
+            CloseHandle(snapshot).ok();
+            return blocks;
+        }
+
+        loop {
+            let mut he = HEAPENTRY32::default();
+            he.dwSize = std::mem::size_of::<HEAPENTRY32>() as usize;
+
+            if Heap32First(&mut he, pid, hl.th32HeapID).is_ok() {
+                loop {
+                    let is_free = (he.dwFlags.0 & 0x2) != 0; // LF32_FREE = 0x2
+
+                    blocks.push(HeapBlock {
+                        address: he.dwAddress as usize,
+                        size: he.dwBlockSize as usize,
+                        is_free,
+                        vm_protect: RegionProtect::ReadWrite,
+                    });
+
+                    if Heap32Next(&mut he).is_err() {
+                        break;
+                    }
+                }
+            }
+
+            if Heap32ListNext(snapshot, &mut hl).is_err() {
+                break;
+            }
+        }
+
+        CloseHandle(snapshot).ok();
+    }
+
+    // log what we found
+    let live: Vec<_> = blocks.iter().filter(|b| !b.is_free).collect();
+    debug_log(&format!(
+        "Heap32 walk: {} total, {} live",
+        blocks.len(),
+        live.len()
+    ));
+    for b in live.iter().take(20) {
+        debug_log(&format!("  0x{:x} size={}", b.address, b.size));
+    }
+
+    blocks
+}
+use std::io::Write;
+
+fn debug_log(msg: &str) {
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("mvis_debug.log")
+        .unwrap();
+    writeln!(f, "{}", msg).ok();
+}
+
 pub fn find_blocks_with_pointers(
     pid: u32,
     blocks: &[HeapBlock],
-) -> std::collections::HashSet<usize> {
+) -> (
+    std::collections::HashSet<usize>,
+    std::collections::HashSet<usize>,
+) {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
 
     let mut tagged = std::collections::HashSet::new();
+    let mut referenced = std::collections::HashSet::new();
 
     unsafe {
         let proc_handle = match OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid)
         {
             Ok(h) => h,
-            Err(_) => return tagged,
+            Err(_) => return (tagged, referenced),
         };
 
         let live_ranges: Vec<(usize, usize)> = blocks
@@ -286,7 +366,7 @@ pub fn find_blocks_with_pointers(
             .collect();
 
         for block in blocks.iter().filter(|b| !b.is_free) {
-            let mut buf = vec![0u8; block.size.min(4096)]; // cap at 4KB per block
+            let mut buf = vec![0u8; block.size.min(4096)];
             let mut bytes_read = 0usize;
 
             let ok = ReadProcessMemory(
@@ -301,27 +381,24 @@ pub fn find_blocks_with_pointers(
                 continue;
             }
 
-            // scan every 8 bytes as a potential pointer
             let mut offset = 0;
             while offset + 8 <= bytes_read {
                 let value = usize::from_le_bytes(buf[offset..offset + 8].try_into().unwrap());
 
-                // check if value points into any live block
-                let points_into_heap = live_ranges
+                if let Some((start, _)) = live_ranges
                     .iter()
-                    .any(|(start, end)| value >= *start && value < *end);
-
-                if points_into_heap {
-                    tagged.insert(block.address);
-                    break;
+                    .find(|(start, end)| value >= *start && value < *end)
+                {
+                    tagged.insert(block.address); // this block contains a pointer
+                    referenced.insert(*start); // that block is pointed to
                 }
 
-                offset += 8;
+                offset += 1;
             }
         }
 
         CloseHandle(proc_handle).ok();
     }
 
-    tagged
+    (tagged, referenced)
 }
