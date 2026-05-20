@@ -83,6 +83,68 @@ fn run() -> Result<(), String> {
                 );
             }
         }
+        "modules" => {
+            let name = get_arg(&args, 2, "process name")?;
+            let pid = find_pid(name.to_string())?;
+
+            #[cfg(target_os = "windows")]
+            {
+                let modules = mvis::os::list_modules(pid);
+                println!(
+                    "{:<18} {:<10} {:<10} {}",
+                    "ADDRESS", "SIZE", "STATUS", "NAME"
+                );
+                println!("{}", "-".repeat(70));
+
+                for m in &modules {
+                    let status = match m.status {
+                        mvis::os::ModuleStatus::Ok => "\x1b[32mOK\x1b[0m",
+                        mvis::os::ModuleStatus::Tampered => "\x1b[31mTAMPERED\x1b[0m",
+                        mvis::os::ModuleStatus::Injected => "\x1b[33mINJECTED\x1b[0m",
+                        mvis::os::ModuleStatus::Unreadable => "\x1b[90mUNREADABLE\x1b[0m",
+                    };
+                    println!(
+                        "0x{:<16x} {:<10} {:<10} {}",
+                        m.base,
+                        format!("{:.1}MB", m.size as f64 / 1024.0 / 1024.0),
+                        status,
+                        m.name,
+                    );
+                }
+
+                let tampered: Vec<_> = modules
+                    .iter()
+                    .filter(|m| matches!(m.status, mvis::os::ModuleStatus::Tampered))
+                    .collect();
+                let injected: Vec<_> = modules
+                    .iter()
+                    .filter(|m| matches!(m.status, mvis::os::ModuleStatus::Injected))
+                    .collect();
+
+                println!();
+                if tampered.is_empty() && injected.is_empty() {
+                    println!("\x1b[32mall modules appear clean\x1b[0m");
+                } else {
+                    if !tampered.is_empty() {
+                        println!(
+                            "\x1b[31m{} tampered module(s) detected\x1b[0m",
+                            tampered.len()
+                        );
+                    }
+                    if !injected.is_empty() {
+                        println!(
+                            "\x1b[33m{} injected module(s) detected\x1b[0m",
+                            injected.len()
+                        );
+                    }
+                }
+            }
+
+            #[cfg(target_os = "linux")]
+            {
+                return Err("modules command is Windows only for now".to_string());
+            }
+        }
         "help" | "--help" | "-h" => {
             println!("commands");
             println!("scan [app.exe] [modes] [json] [output]");

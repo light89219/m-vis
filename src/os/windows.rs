@@ -8,6 +8,7 @@
 //! - `GetModuleFileNameExW` — resolves image region base addresses to DLL/EXE paths
 //! - `ReadProcessMemory` — reads heap segment data directly for fast block parsing
 //! - `Toolhelp32` — enumerates heap base addresses
+use std::collections::HashMap;
 use windows::Win32::Foundation::HMODULE;
 use windows::Win32::System::Memory::{
     MEM_COMMIT, MEM_IMAGE, MEM_MAPPED, MEM_PRIVATE, MEM_RESERVE, MEMORY_BASIC_INFORMATION,
@@ -17,6 +18,23 @@ use windows::Win32::System::ProcessStatus::GetModuleFileNameExW;
 use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
 
 use crate::types::{HeapBlock, Region, RegionKind, RegionProtect, RegionState};
+
+#[derive(Debug, Clone)]
+pub enum ModuleStatus {
+    Ok,
+    Tampered,
+    Injected,
+    Unreadable,
+}
+
+#[derive(Debug, Clone)]
+pub struct ModuleInfo {
+    pub base: usize,
+    pub size: usize,
+    pub name: String,
+    pub path: String,
+    pub status: ModuleStatus,
+}
 
 /// Walks the virtual address space of a process and returns all memory regions.
 ///
@@ -385,4 +403,257 @@ pub fn find_blocks_with_pointers(
     }
 
     (tagged, referenced)
+}
+
+/// Lists all loaded modules in a process and checks their integrity.
+///
+/// For each image region:
+/// 1. Deduplicates by DLL path (multiple regions per DLL)
+/// 2. Checks if the file exists on disk — missing = injected
+/// 3. Compares the `.text` section in memory vs disk — differs = tampered
+///
+/// # Arguments
+/// * `pid` — target process ID
+///
+/// # Returns
+/// A `Vec<ModuleInfo>` with one entry per loaded DLL/EXE
+pub fn list_modules(pid: u32) -> Vec<ModuleInfo> {
+    use windows::Win32::Foundation::CloseHandle;
+
+    let mut modules: HashMap<String, ModuleInfo> = HashMap::new();
+
+    unsafe {
+        let proc_handle = match OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid)
+        {
+            Ok(h) => h,
+            Err(_) => return vec![],
+        };
+
+        // walk regions and collect image regions grouped by path
+        let regions = walk_regions(pid);
+        for region in regions
+            .iter()
+            .filter(|r| r.kind == RegionKind::Image && !r.name.is_empty())
+        {
+            modules.entry(region.name.clone()).or_insert(ModuleInfo {
+                base: region.base,
+                size: 0,
+                name: std::path::Path::new(&region.name)
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string(),
+                path: region.name.clone(),
+                status: ModuleStatus::Ok,
+            });
+
+            // accumulate total size
+            if let Some(m) = modules.get_mut(&region.name) {
+                m.size += region.size;
+                // use lowest base address
+                if region.base < m.base {
+                    m.base = region.base;
+                }
+            }
+        }
+
+        // check integrity for each module
+        for (path, module) in modules.iter_mut() {
+            // check if file exists on disk
+            if !std::path::Path::new(path).exists() {
+                module.status = ModuleStatus::Injected;
+                continue;
+            }
+
+            // read .text section from disk
+            let disk_bytes = match read_text_section_from_disk(path) {
+                Some(b) => b,
+                None => {
+                    module.status = ModuleStatus::Unreadable;
+                    continue;
+                }
+            };
+
+            // read same range from memory
+            let mem_bytes =
+                match read_text_section_from_memory(proc_handle, module.base, disk_bytes.len()) {
+                    Some(b) => b,
+                    None => {
+                        module.status = ModuleStatus::Unreadable;
+                        continue;
+                    }
+                };
+
+            module.status = check_integrity(&disk_bytes, &mem_bytes);
+        }
+
+        CloseHandle(proc_handle).ok();
+    }
+
+    let mut result: Vec<ModuleInfo> = modules.into_values().collect();
+    result.sort_by(|a, b| a.base.cmp(&b.base));
+    result
+}
+
+/// Reads the .text section from a PE file on disk.
+fn read_text_section_from_disk(path: &str) -> Option<Vec<u8>> {
+    use std::fs;
+    use std::io::Read;
+
+    let mut file = fs::File::open(path).ok()?;
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf).ok()?;
+
+    // parse PE header to find .text section
+    // DOS header magic: MZ = 0x5A4D
+    if buf.len() < 64 {
+        return None;
+    }
+    if buf[0] != 0x4D || buf[1] != 0x5A {
+        return None;
+    }
+
+    let pe_offset = u32::from_le_bytes(buf[0x3C..0x40].try_into().ok()?) as usize;
+    if pe_offset + 4 > buf.len() {
+        return None;
+    }
+
+    // PE signature: PE\0\0
+    if &buf[pe_offset..pe_offset + 4] != b"PE\0\0" {
+        return None;
+    }
+
+    let num_sections =
+        u16::from_le_bytes(buf[pe_offset + 6..pe_offset + 8].try_into().ok()?) as usize;
+
+    let opt_header_size =
+        u16::from_le_bytes(buf[pe_offset + 20..pe_offset + 22].try_into().ok()?) as usize;
+
+    let section_start = pe_offset + 24 + opt_header_size;
+
+    for i in 0..num_sections {
+        let sec_offset = section_start + i * 40;
+        if sec_offset + 40 > buf.len() {
+            break;
+        }
+
+        let name = &buf[sec_offset..sec_offset + 8];
+        if name.starts_with(b".text") {
+            let raw_size =
+                u32::from_le_bytes(buf[sec_offset + 16..sec_offset + 20].try_into().ok()?) as usize;
+            let raw_offset =
+                u32::from_le_bytes(buf[sec_offset + 20..sec_offset + 24].try_into().ok()?) as usize;
+
+            if raw_offset + raw_size > buf.len() {
+                return None;
+            }
+            return Some(buf[raw_offset..raw_offset + raw_size].to_vec());
+        }
+    }
+
+    None
+}
+
+/// Reads `size` bytes from a process starting at `base_address`.
+fn read_text_section_from_memory(
+    proc_handle: windows::Win32::Foundation::HANDLE,
+    base: usize,
+    size: usize,
+) -> Option<Vec<u8>> {
+    use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
+
+    let mut header_buf = vec![0u8; 0x1000];
+    let mut bytes_read = 0usize;
+
+    unsafe {
+        ReadProcessMemory(
+            proc_handle,
+            base as *const _,
+            header_buf.as_mut_ptr() as *mut _,
+            header_buf.len(),
+            Some(&mut bytes_read),
+        )
+        .ok()?;
+    }
+
+    if bytes_read < 64 {
+        return None;
+    }
+    if header_buf[0] != 0x4D || header_buf[1] != 0x5A {
+        return None;
+    }
+
+    let pe_offset = u32::from_le_bytes(header_buf[0x3C..0x40].try_into().ok()?) as usize;
+    let num_sections =
+        u16::from_le_bytes(header_buf[pe_offset + 6..pe_offset + 8].try_into().ok()?) as usize;
+    let opt_header_size =
+        u16::from_le_bytes(header_buf[pe_offset + 20..pe_offset + 22].try_into().ok()?) as usize;
+    let section_start = pe_offset + 24 + opt_header_size;
+
+    for i in 0..num_sections {
+        let sec_offset = section_start + i * 40;
+        if sec_offset + 40 > bytes_read {
+            break;
+        }
+
+        let name = &header_buf[sec_offset..sec_offset + 8];
+        if name.starts_with(b".text") {
+            let virtual_addr = u32::from_le_bytes(
+                header_buf[sec_offset + 12..sec_offset + 16]
+                    .try_into()
+                    .ok()?,
+            ) as usize;
+            let virtual_size = u32::from_le_bytes(
+                header_buf[sec_offset + 8..sec_offset + 12]
+                    .try_into()
+                    .ok()?,
+            ) as usize;
+
+            let read_size = virtual_size.min(size);
+            let mut text_buf = vec![0u8; read_size];
+            let mut bytes_read = 0usize;
+
+            unsafe {
+                ReadProcessMemory(
+                    proc_handle,
+                    (base + virtual_addr) as *const _,
+                    text_buf.as_mut_ptr() as *mut _,
+                    read_size,
+                    Some(&mut bytes_read),
+                )
+                .ok()?;
+            }
+
+            return Some(text_buf[..bytes_read].to_vec());
+        }
+    }
+
+    None
+}
+
+fn check_integrity(disk: &[u8], mem: &[u8]) -> ModuleStatus {
+    if disk.len() == 0 || mem.len() == 0 {
+        return ModuleStatus::Unreadable;
+    }
+
+    let page_size = 0x1000;
+    let mut dirty = 0usize;
+    let mut _total = 0usize;
+    let compare_len = disk.len().min(mem.len());
+
+    let mut offset = 0;
+    while offset < compare_len {
+        let end = (offset + page_size).min(compare_len);
+        _total += 1;
+        if disk[offset..end] != mem[offset..end] {
+            dirty += 1;
+        }
+        offset += page_size;
+    }
+
+    if dirty > 0 {
+        ModuleStatus::Tampered
+    } else {
+        ModuleStatus::Ok
+    }
 }
