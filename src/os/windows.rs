@@ -19,7 +19,7 @@ use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_INFORMATION, 
 
 use crate::types::{HeapBlock, Region, RegionKind, RegionProtect, RegionState};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ModuleStatus {
     Ok,
     Tampered,
@@ -417,9 +417,9 @@ pub fn find_blocks_with_pointers(
 ///
 /// # Returns
 /// A `Vec<ModuleInfo>` with one entry per loaded DLL/EXE
-pub fn list_modules(pid: u32) -> Vec<ModuleInfo> {
+pub fn list_modules(pid: u32, flag: String) -> Vec<ModuleInfo> {
     use windows::Win32::Foundation::CloseHandle;
-
+    let tampered: bool = flag == "-t";
     let mut modules: HashMap<String, ModuleInfo> = HashMap::new();
 
     unsafe {
@@ -489,8 +489,15 @@ pub fn list_modules(pid: u32) -> Vec<ModuleInfo> {
 
         CloseHandle(proc_handle).ok();
     }
-
-    let mut result: Vec<ModuleInfo> = modules.into_values().collect();
+    let mut result: Vec<ModuleInfo> = vec![];
+    if tampered {
+        result = modules
+            .into_values()
+            .filter(|m| m.status != ModuleStatus::Ok)
+            .collect();
+    } else {
+        result = modules.into_values().collect();
+    }
     result.sort_by(|a, b| a.base.cmp(&b.base));
     result
 }

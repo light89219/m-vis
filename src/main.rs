@@ -86,10 +86,11 @@ fn run() -> Result<(), String> {
         "modules" => {
             let name = get_arg(&args, 2, "process name")?;
             let pid = find_pid(name.to_string())?;
+            let flag = get_arg(&args, 3, "flag (-t)")?;
 
             #[cfg(target_os = "windows")]
             {
-                let modules = mvis::os::list_modules(pid);
+                let modules = mvis::os::list_modules(pid, flag.to_string());
                 println!(
                     "{:<18} {:<10} {:<10} {}",
                     "ADDRESS", "SIZE", "STATUS", "NAME"
