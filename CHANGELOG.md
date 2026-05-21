@@ -1,4 +1,14 @@
 # Changelog
+## [0.2.4] - 2026-05-21
+### Added
+- (CLI) modules command
+- (TUI) [PTR] and [REF] tags in Heap view allocation table, issue #1
+
+### Known Issues
+- [PTR] and [REF] tags can't account for memory rotations.
+- no modules command for linux
+- no walk_heap_granular equivalent for linux
+
 ## [0.2.3] - 2026-05-15
 ### Added
 - (TUI) clear command

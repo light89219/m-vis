@@ -218,7 +218,13 @@ impl App {
         let raw = self.input.trim().to_string();
         self.input.clear();
         self.reset_cursor();
-
+        if raw.is_empty() {
+            return;
+        }
+        self.dispatch(&raw);
+    }
+    fn dispatch(&mut self, cmd: &str) {
+        let raw = cmd.trim().to_string();
         if raw.is_empty() {
             return;
         }
@@ -226,7 +232,9 @@ impl App {
         self.push_message(format!("> {raw}"));
 
         let parts: Vec<&str> = raw.split_whitespace().collect();
-
+        self.handle_command(parts);
+    }
+    fn handle_command(&mut self, parts: Vec<&str>) {
         match parts.clone().as_slice() {
             ["leak-m", _proc, _secs, _samples] => {
                 let proc_name = _proc.to_string();
@@ -318,11 +326,10 @@ impl App {
                 self.push_message("  clear                     clear output history".into());
             }
             _ => {
-                self.push_message(format!("unknown command: {raw}"));
+                self.push_message(format!("unknown command: {}", parts.join(" ")));
                 self.push_message("type 'help' for available commands".into());
             }
         }
-        //self.messages.push(self.input.clone());
     }
 
     fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {

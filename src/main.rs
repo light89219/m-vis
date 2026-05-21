@@ -151,6 +151,7 @@ fn run() -> Result<(), String> {
             println!("scan [app.exe] [modes] [json] [output]");
             println!("leak [app.exe] [duration]");
             println!("leak-m [app.exe] [duration] [samples]");
+            println!("modules [app.exe]");
             #[cfg(target_os = "windows")]
             println!("wintrace [app.exe]");
             println!("help");
