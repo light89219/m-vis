@@ -678,12 +678,18 @@ mod tests {
 
     #[test]
     fn test_empty_disk_returns_unreadable() {
-        assert_eq!(check_integrity(&[], &[0u8; 0x1000]), ModuleStatus::Unreadable);
+        assert_eq!(
+            check_integrity(&[], &[0u8; 0x1000]),
+            ModuleStatus::Unreadable
+        );
     }
 
     #[test]
     fn test_empty_mem_returns_unreadable() {
-        assert_eq!(check_integrity(&[0u8; 0x1000], &[]), ModuleStatus::Unreadable);
+        assert_eq!(
+            check_integrity(&[0u8; 0x1000], &[]),
+            ModuleStatus::Unreadable
+        );
     }
 
     #[test]
