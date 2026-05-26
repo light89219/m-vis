@@ -129,7 +129,12 @@ pub fn modules(args: Vec<&str>) -> Result<Vec<String>, String> {
     if args.len() == 3 {
         flag = args[2].to_string();
     }
+    #[cfg(target_os = "windows")]
     let results = crate::os::list_modules(pid, flag);
+
+    #[cfg(target_os = "linux")]
+    let results = "Not Yet Implemented on Linux";
+
     let output: Vec<String> = results
         .into_iter()
         .map(|result| format!("{}: {:?}", result.name, result.status))
