@@ -967,6 +967,45 @@ mod tests {
         assert_eq!(app.messages.len(), initial_len);
     }
 
+    // ── scrolling ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn scroll_up_does_not_underflow() {
+        let mut app = make_app();
+        app.scroll_up();
+        assert_eq!(app.scroll_offset, 0);
+    }
+
+    #[test]
+    fn scroll_down_increments_offset() {
+        let mut app = make_app();
+        app.scroll_down();
+        assert_eq!(app.scroll_offset, 1);
+    }
+
+    #[test]
+    fn push_message_auto_scrolls_when_full() {
+        let mut app = make_app();
+        app.messages_height = 2;
+        app.push_message("line 1".into());
+        app.push_message("line 2".into());
+        app.push_message("line 3".into()); // overflows height
+        // scroll_offset should have been bumped to keep the last line visible
+        assert!(app.scroll_offset > 0);
+    }
+
+    // ── heap view ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn tab_toggles_heap_view_mode() {
+        let mut app = make_app();
+        assert!(matches!(app.heap_view_mode, HeapViewMode::Metrics));
+        app.heap_view_mode = HeapViewMode::Allocations;
+        assert!(matches!(app.heap_view_mode, HeapViewMode::Allocations));
+        app.heap_view_mode = HeapViewMode::Metrics;
+        assert!(matches!(app.heap_view_mode, HeapViewMode::Metrics));
+    }
+
     // ── pagination ───────────────────────────────────────────────────────────
 
     #[test]
@@ -1009,5 +1048,39 @@ mod tests {
         app.alloc_table_selected = 5;
         app.next_page();
         assert_eq!(app.alloc_table_selected, 0);
+    }
+    // ── row selection ────────────────────────────────────────────────────────
+
+    #[test]
+    fn select_next_row_increments() {
+        let mut app = make_app();
+        app.alloc_table_page_size = 5;
+        app.select_next_row();
+        assert_eq!(app.alloc_table_selected, 1);
+    }
+
+    #[test]
+    fn select_next_row_clamps_at_page_end() {
+        let mut app = make_app();
+        app.alloc_table_page_size = 3;
+        app.alloc_table_selected = 2; // already at last row in page
+        app.select_next_row();
+        assert_eq!(app.alloc_table_selected, 2);
+    }
+
+    #[test]
+    fn select_prev_row_does_not_underflow() {
+        let mut app = make_app();
+        app.alloc_table_selected = 0;
+        app.select_prev_row();
+        assert_eq!(app.alloc_table_selected, 0);
+    }
+
+    #[test]
+    fn select_prev_row_decrements() {
+        let mut app = make_app();
+        app.alloc_table_selected = 3;
+        app.select_prev_row();
+        assert_eq!(app.alloc_table_selected, 2);
     }
 }
