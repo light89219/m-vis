@@ -16,6 +16,7 @@ enum AppEvent {
     ScanResult(commands::ScanResult),
     ScanError(String),
     Output(Line<'static>),
+    RunCommand(String)
 }
 
 pub fn tui_main() -> Result<()> {
@@ -63,6 +64,7 @@ struct App {
     rx: std::sync::mpsc::Receiver<AppEvent>,
     is_loading: bool,
     loading_msg: String,
+    watch_stop: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 }
 enum HeapViewMode {
     Metrics,     // high-level view
@@ -72,6 +74,12 @@ enum InputMode {
     Normal,
     Editing,
 }
+
+//macro_rules! run_command {
+//    ($self:expr, $command:expr) => {
+//        $self.handle_command($command);
+//    };
+//}
 
 impl App {
     fn new() -> Self {
@@ -95,6 +103,7 @@ impl App {
             rx,
             is_loading: false,
             loading_msg: String::new(),
+            watch_stop: None,
         };
         app.push_message("mvis ready. type 'help' for commands.".into());
         app
@@ -236,6 +245,54 @@ impl App {
     }
     fn handle_command(&mut self, parts: Vec<&str>) {
         match parts.clone().as_slice() {
+            ["watch", _proc, _mode] => {
+                let proc = _proc.to_string();
+                let mode = _mode.to_string();
+                let tx = self.tx.clone();
+
+                // build the command string to dispatch
+                let cmd = match mode.as_str() {
+                    "-h" => format!("scan {} -h", proc),
+                    "-m" => format!("modules {}", proc),
+                    _ => {
+                        self.push_message("unknown watch mode".into());
+                        return;
+                    }
+                };
+                // stop any existing watch
+                if let Some(stop) = &self.watch_stop {
+                    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
+            
+                let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                self.watch_stop = Some(stop.clone());
+            
+                self.push_message(format!("watching: {} (100 iterations, Ctrl+W to stop)", cmd));
+            
+                std::thread::spawn(move || {
+                    let mut i = 0u64;
+                    loop {
+                        if stop.load(std::sync::atomic::Ordering::Relaxed) {
+                            tx.send(AppEvent::Output(Line::raw(format!("watch stopped at iteration {}", i)))).ok();
+                            break;
+                        }
+                    
+                        tx.send(AppEvent::RunCommand(cmd.clone())).ok();
+                    
+                        std::thread::sleep(std::time::Duration::from_secs(1));
+                        i += 1;
+                    }
+                    tx.send(AppEvent::Output("watch complete".into())).ok();
+                });
+            }
+            ["stopwatch"] => {
+                if let Some(stop) = &self.watch_stop {
+                    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+                    self.push_message("stopping watch...".into());
+                } else {
+                    self.push_message("no watch running".into());
+                }
+            }
             ["leak-m", _proc, _secs, _samples] => {
                 let proc_name = _proc.to_string();
                 let secs = _secs.to_string();
@@ -382,6 +439,9 @@ impl App {
                     }
                     AppEvent::Output(line) => {
                         self.push_line(line);
+                    }
+                    AppEvent::RunCommand(command) => {
+                        self.dispatch(&command);
                     }
                 }
             }
