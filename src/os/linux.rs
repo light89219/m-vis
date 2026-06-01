@@ -2,6 +2,7 @@ use crate::types::{
     HeapBlock, ModuleInfo, ModuleStatus, Region, RegionKind, RegionProtect, RegionState,
 };
 use std::fs;
+use std::io;
 
 pub fn walk_regions(pid: u32) -> Vec<Region> {
     let path = format!("/proc/{}/maps", pid);
@@ -113,51 +114,36 @@ pub fn list_modules(pid: u32, flag: String) -> Vec<ModuleInfo> {
         Err(_) => return vec![],
     };
 
-    for line in content.lines() {
-        let parts: Vec<&str> = line.splitn(6, ' ').collect();
-        if parts.len() < 6 {
-            continue;
-        }
+    let map_entries: Vec<_> = content.lines().filter_map(parse_maps_line).collect();
 
-        let addr_range = parts[0];
-        let perms = parts[1];
-        let path = parts[5].trim();
+    for map_entry in map_entries.iter().filter(|entry| is_module_mapping(entry)) {
+        modules
+            .entry(map_entry.path.clone())
+            .or_insert_with(|| ModuleInfo {
+                base: map_entry.start,
+                size: 0,
+                name: std::path::Path::new(&map_entry.path)
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string(),
+                path: map_entry.path.clone(),
+                status: ModuleStatus::Ok,
+            });
+    }
 
-        if path.is_empty() || path.starts_with('[') || path.starts_with("anon") {
-            continue;
-        }
-
-        let addrs: Vec<&str> = addr_range.split('-').collect();
-        if addrs.len() != 2 {
-            continue;
-        }
-        let base = match usize::from_str_radix(addrs[0], 16) {
-            Ok(a) => a,
-            Err(_) => continue,
-        };
-        let end = match usize::from_str_radix(addrs[1], 16) {
-            Ok(a) => a,
-            Err(_) => continue,
-        };
-        let size = end - base;
-
-        let entry = modules.entry(path.to_string()).or_insert(ModuleInfo {
-            base,
-            size: 0,
-            name: std::path::Path::new(path)
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string(),
-            path: path.to_string(),
-            status: ModuleStatus::Ok,
-        });
-
-        entry.size += size;
-        if base < entry.base {
-            entry.base = base;
+    for map_entry in &map_entries {
+        if let Some(module) = modules.get_mut(&map_entry.path) {
+            let size = map_entry.size();
+            module.size += size;
+            if map_entry.start < module.base {
+                module.base = map_entry.start;
+            }
         }
     }
+
+    let mem_path = format!("/proc/{}/mem", pid);
+    let mut mem_file = std::fs::File::open(mem_path).ok();
 
     for (path, module) in modules.iter_mut() {
         if !std::path::Path::new(path).exists() {
@@ -165,8 +151,25 @@ pub fn list_modules(pid: u32, flag: String) -> Vec<ModuleInfo> {
             continue;
         }
 
-        let disk_bytes = match read_text_section_from_disk(path) {
-            Some(b) => b,
+        // If the process memory file cannot be opened at all, Linux ptrace policy is
+        // preventing integrity checks for the whole process. Do not mark every
+        // clean module as Unreadable in that case; leave the default Ok status so
+        // `-t` only reports actionable per-module problems.
+        let Some(mem_file) = mem_file.as_mut() else {
+            continue;
+        };
+
+        let disk_text = match read_text_section_from_disk(path) {
+            Some(text) => text,
+            None => {
+                module.status = ModuleStatus::Unreadable;
+                continue;
+            }
+        };
+
+        let text_addr = match text_section_memory_address(&map_entries, path, disk_text.file_offset)
+        {
+            Some(addr) => addr,
             None => {
                 module.status = ModuleStatus::Unreadable;
                 continue;
@@ -174,15 +177,15 @@ pub fn list_modules(pid: u32, flag: String) -> Vec<ModuleInfo> {
         };
 
         let mem_bytes =
-            match read_text_section_from_memory_linux(pid, module.base, disk_bytes.len()) {
-                Some(b) => b,
-                None => {
+            match read_text_section_from_memory_linux(mem_file, text_addr, disk_text.bytes.len()) {
+                Ok(bytes) => bytes,
+                Err(_) => {
                     module.status = ModuleStatus::Unreadable;
                     continue;
                 }
             };
 
-        module.status = check_integrity(&disk_bytes, &mem_bytes);
+        module.status = check_integrity(&disk_text.bytes, &mem_bytes);
     }
 
     let mut result: Vec<ModuleInfo> = if tampered {
@@ -198,28 +201,113 @@ pub fn list_modules(pid: u32, flag: String) -> Vec<ModuleInfo> {
     result
 }
 
-fn read_text_section_from_memory_linux(pid: u32, base: usize, len: usize) -> Option<Vec<u8>> {
-    use std::io::{Read, Seek, SeekFrom};
-
-    let mem_path = format!("/proc/{}/mem", pid);
-    let mut file = std::fs::File::open(&mem_path).ok()?;
-
-    file.seek(SeekFrom::Start(base as u64)).ok()?;
-
-    let mut buf = vec![0u8; len];
-    file.read_exact(&mut buf).ok()?;
-    Some(buf)
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct MapEntry {
+    start: usize,
+    end: usize,
+    offset: usize,
+    is_executable: bool,
+    path: String,
 }
 
-fn read_text_section_from_disk(path: &str) -> Option<Vec<u8>> {
-    use object::{Object, ObjectSection};
+impl MapEntry {
+    fn size(&self) -> usize {
+        self.end - self.start
+    }
+}
+
+fn parse_maps_line(line: &str) -> Option<MapEntry> {
+    let mut parts = line.split_whitespace();
+
+    let range = parts.next()?;
+    let perms = parts.next()?;
+    let offset = parts.next()?;
+    let _device = parts.next()?;
+    let _inode = parts.next()?;
+    let path = parts.collect::<Vec<_>>().join(" ");
+
+    let (start, end) = range.split_once('-')?;
+    let start = usize::from_str_radix(start, 16).ok()?;
+    let end = usize::from_str_radix(end, 16).ok()?;
+    if end <= start {
+        return None;
+    }
+
+    Some(MapEntry {
+        start,
+        end,
+        offset: usize::from_str_radix(offset, 16).ok()?,
+        is_executable: perms.contains('x'),
+        path,
+    })
+}
+
+fn is_module_mapping(entry: &MapEntry) -> bool {
+    entry.is_executable
+        && !entry.path.is_empty()
+        && !entry.path.starts_with('[')
+        && !entry.path.starts_with("anon")
+}
+
+fn text_section_memory_address(
+    map_entries: &[MapEntry],
+    path: &str,
+    file_offset: usize,
+) -> Option<usize> {
+    map_entries.iter().find_map(|entry| {
+        if entry.path != path || !entry.is_executable {
+            return None;
+        }
+
+        let file_range_end = entry.offset.checked_add(entry.size())?;
+        if file_offset < entry.offset || file_offset >= file_range_end {
+            return None;
+        }
+
+        entry.start.checked_add(file_offset - entry.offset)
+    })
+}
+
+fn read_text_section_from_memory_linux(
+    file: &mut std::fs::File,
+    base: usize,
+    len: usize,
+) -> io::Result<Vec<u8>> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    file.seek(SeekFrom::Start(base as u64))?;
+
+    let mut buf = vec![0u8; len];
+    file.read_exact(&mut buf)?;
+    Ok(buf)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct TextSection {
+    file_offset: usize,
+    bytes: Vec<u8>,
+}
+
+fn read_text_section_from_disk(path: &str) -> Option<TextSection> {
+    use object::{Object, ObjectKind, ObjectSection};
 
     let data = std::fs::read(path).ok()?;
     let obj = object::File::parse(&*data).ok()?;
+    if !matches!(obj.kind(), ObjectKind::Executable | ObjectKind::Dynamic) {
+        return None;
+    }
 
     let section = obj.section_by_name(".text")?;
-    let data = section.uncompressed_data().ok()?;
-    Some(data.into_owned())
+    let (file_offset, _) = section.file_range()?;
+    let bytes = section.uncompressed_data().ok()?.into_owned();
+    if bytes.is_empty() {
+        return None;
+    }
+
+    Some(TextSection {
+        file_offset: file_offset.try_into().ok()?,
+        bytes,
+    })
 }
 
 fn check_integrity(disk: &[u8], mem: &[u8]) -> ModuleStatus {
@@ -237,5 +325,99 @@ fn check_integrity(disk: &[u8], mem: &[u8]) -> ModuleStatus {
         ModuleStatus::Modified
     } else {
         ModuleStatus::Tampered
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_proc_maps_line() {
+        let entry = parse_maps_line(
+            "72d6fb428000-72d6fb5b0000 r-xp 00028000 08:02 1238129                    /usr/lib/x86_64-linux-gnu/libc.so.6",
+        )
+        .unwrap();
+
+        assert_eq!(entry.start, 0x72d6fb428000);
+        assert_eq!(entry.end, 0x72d6fb5b0000);
+        assert_eq!(entry.offset, 0x28000);
+        assert!(entry.is_executable);
+        assert_eq!(entry.path, "/usr/lib/x86_64-linux-gnu/libc.so.6");
+    }
+
+    #[test]
+    fn module_mappings_must_be_executable_file_paths() {
+        let locale = parse_maps_line(
+            "72d6fb000000-72d6fb2eb000 r--p 00000000 08:02 1179733                    /usr/lib/locale/locale-archive",
+        )
+        .unwrap();
+        let vdso =
+            parse_maps_line("7ffe925b0000-7ffe925b2000 r-xp 00000000 00:00 0 [vdso]").unwrap();
+        let libc = parse_maps_line(
+            "72d6fb428000-72d6fb5b0000 r-xp 00028000 08:02 1238129                    /usr/lib/x86_64-linux-gnu/libc.so.6",
+        )
+        .unwrap();
+
+        assert!(!is_module_mapping(&locale));
+        assert!(!is_module_mapping(&vdso));
+        assert!(is_module_mapping(&libc));
+    }
+
+    #[test]
+    fn maps_text_file_offset_to_memory_address() {
+        let entries = vec![
+            parse_maps_line("1000-2000 r--p 00000000 08:02 1 /usr/bin/app").unwrap(),
+            parse_maps_line("2000-5000 r-xp 00001000 08:02 1 /usr/bin/app").unwrap(),
+        ];
+
+        assert_eq!(
+            text_section_memory_address(&entries, "/usr/bin/app", 0x1234),
+            Some(0x2234)
+        );
+    }
+
+    #[test]
+    fn maps_text_file_offset_only_to_executable_mapping() {
+        let entries = vec![
+            parse_maps_line("1000-5000 r--p 00001000 08:02 1 /usr/bin/app").unwrap(),
+            parse_maps_line("6000-9000 r-xp 00001000 08:02 1 /usr/bin/app").unwrap(),
+        ];
+
+        assert_eq!(
+            text_section_memory_address(&entries, "/usr/bin/app", 0x1234),
+            Some(0x6234)
+        );
+    }
+
+    #[test]
+    fn reads_text_section_from_current_exe() {
+        let exe = std::env::current_exe().unwrap();
+        let section = read_text_section_from_disk(exe.to_str().unwrap()).unwrap();
+
+        assert!(section.file_offset > 0);
+        assert!(!section.bytes.is_empty());
+    }
+
+    #[test]
+    fn identical_bytes_are_ok() {
+        let bytes = [1, 2, 3, 4];
+
+        assert_eq!(check_integrity(&bytes, &bytes), ModuleStatus::Ok);
+    }
+
+    #[test]
+    fn global_memory_denial_is_not_per_module_unreadable_noise() {
+        let module = ModuleInfo {
+            base: 0x1000,
+            size: 0x2000,
+            name: "libexample.so".to_string(),
+            path: "/usr/lib/libexample.so".to_string(),
+            status: ModuleStatus::Ok,
+        };
+
+        // When /proc/<pid>/mem cannot be opened at all, list_modules leaves the
+        // default status in place instead of reporting every module as Unreadable.
+        assert_eq!(module.status, ModuleStatus::Ok);
     }
 }
