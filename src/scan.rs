@@ -394,6 +394,21 @@ fn diff_snapshots(before: &[HeapBlock], after: &[HeapBlock]) -> Vec<(usize, usiz
         .collect()
 }
 
+fn diff_freed_memory(before: &[HeapBlock], after: &[HeapBlock]) -> Vec<(usize, usize)> {
+    let before_addrs: HashSet<usize> = before
+        .iter()
+        .filter(|b| b.is_free)
+        .map(|b| b.address)
+        .collect();
+
+    after
+        .iter()
+        .filter(|b| b.is_free)
+        .filter(|b| !before_addrs.contains(&(b.address as usize)))
+        .map(|b| (b.address as usize, b.size))
+        .collect()
+}
+
 pub fn diff_heap_size(before: &[HeapBlock], after: &[HeapBlock]) -> usize {
     let before_total: usize = before.iter().map(|b| b.size).sum();
     let after_total: usize = after.iter().map(|b| b.size).sum();
@@ -454,9 +469,12 @@ pub fn leak_command(pid: u32, interval: u64) {
     {
         let results = diff_snapshots(&snapshot1, &snapshot2);
         let new_bytes: usize = results.iter().map(|(_, size)| size).sum();
+        let freed = diff_freed_memory(&snapshot1, &snapshot2);
+        let new_freed_memory: usize = freed.iter().map(|(_, size)| size).sum();
         println!("snapshot 1 → snapshot 2 ({}s interval)", interval);
         println!("new allocations : {}", results.len());
         println!("new bytes       : {} KB", new_bytes / 1024);
+        println!("freed memory    : {} KB", new_freed_memory / 1024);
         if results.is_empty() {
             println!("no leak detected");
         } else {
