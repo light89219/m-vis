@@ -427,7 +427,7 @@ pub fn leak_command(pid: u32, interval: u64) {
 
     #[cfg(target_os = "linux")]
     let trace = {
-        match crate::stack_trace::StackTrace::capture(pid, &regions) {
+        match crate::core::stack_trace::StackTrace::capture(pid, &regions) {
             Ok(t) => {
                 eprintln!("[dbg] stack captured: {} frames", t.frames.len());
                 Ok(t)
@@ -495,7 +495,7 @@ pub fn leak_command_tui(pid: u32, interval: u64) -> Vec<Line<'static>> {
 
     #[cfg(target_os = "linux")]
     let trace = {
-        match crate::stack_trace::StackTrace::capture(pid, &regions) {
+        match crate::core::stack_trace::StackTrace::capture(pid, &regions) {
             Ok(t) => {
                 output.push(Line::raw(format!(
                     "[dbg] stack captured: {} frames",
