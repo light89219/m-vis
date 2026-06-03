@@ -1,11 +1,11 @@
 use crate::os::walk_heap;
 use crate::os::walk_regions;
-use crate::ui::render;
 use crate::types::RegionEntry;
 use crate::types::RegionKind::*;
 use crate::types::RegionProtect::*;
 use crate::types::RegionState::*;
 use crate::types::{HeapBlock, Region};
+use crate::ui::render;
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::thread::sleep;

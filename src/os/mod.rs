@@ -8,3 +8,11 @@ pub use windows::*;
 mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::*;
+
+use crate::types::{HeapBlock, ModuleInfo, Region};
+
+pub trait MemoryProvider {
+    fn walk_regions(pid: u32) -> Vec<Region>;
+    fn walk_heap(pid: u32) -> Vec<HeapBlock>;
+    fn list_modules(pid: u32, flag: String) -> Vec<ModuleInfo>;
+}

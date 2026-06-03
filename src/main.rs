@@ -10,8 +10,8 @@
 //! mvis list [filter]
 //! ```
 //!
-use mvis::ui::commands::process_is_visible;
 use mvis::core::scan::{leak_command, leak_m_command, scan_with_modes};
+use mvis::ui::commands::process_is_visible;
 use mvis::ui::tui::tui_main;
 use std::env;
 
