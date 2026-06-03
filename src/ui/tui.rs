@@ -8,8 +8,8 @@ use ratatui::widgets::Wrap;
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::{DefaultTerminal, Frame};
 
-use crate::commands;
-use crate::render::format_size;
+use super::commands;
+use super::render::format_size;
 use crate::types::{HeapBlock, RegionProtect};
 
 enum AppEvent {

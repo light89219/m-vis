@@ -10,9 +10,9 @@
 //! mvis list [filter]
 //! ```
 //!
-use mvis::commands::process_is_visible;
-use mvis::scan::{leak_command, leak_m_command, scan_with_modes};
-use mvis::tui::tui_main;
+use mvis::ui::commands::process_is_visible;
+use mvis::core::scan::{leak_command, leak_m_command, scan_with_modes};
+use mvis::ui::tui::tui_main;
 use std::env;
 
 fn main() {
@@ -161,7 +161,7 @@ fn run() -> Result<(), String> {
             let queryp = get_arg(&args, 2, "process name")?;
             let pid = find_pid(queryp.to_string())?;
             let regions = mvis::os::walk_regions(pid);
-            match mvis::stack_trace::StackTrace::capture(pid, &regions) {
+            match mvis::core::stack_trace::StackTrace::capture(pid, &regions) {
                 Ok(trace) => {
                     println!("stack trace for {} (pid: {})", queryp, pid);
                     println!("{}", "-".repeat(60));

@@ -1,5 +1,5 @@
-use crate::scan::leak_command_tui;
-use crate::scan::scan_with_modes_tui;
+use crate::core::scan::leak_command_tui;
+use crate::core::scan::scan_with_modes_tui;
 use ratatui::text::Line;
 
 use crate::types::HeapBlock;
@@ -46,7 +46,7 @@ pub fn leak_m(args: Vec<&str>, tx: Sender<Line<'static>>) -> Result<(), String> 
     let pid = find_pid(queryp.to_string())?;
     let interval: u64 = args[2].parse().unwrap();
     let samples: u64 = args[3].parse().unwrap();
-    crate::scan::leak_m_command_tui(pid, interval, samples, tx);
+    crate::core::scan::leak_m_command_tui(pid, interval, samples, tx);
     Ok(())
 }
 

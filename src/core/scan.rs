@@ -1,6 +1,6 @@
 use crate::os::walk_heap;
 use crate::os::walk_regions;
-use crate::render;
+use crate::ui::render;
 use crate::types::RegionEntry;
 use crate::types::RegionKind::*;
 use crate::types::RegionProtect::*;
