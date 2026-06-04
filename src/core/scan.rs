@@ -423,10 +423,11 @@ pub fn diff_heap_size(before: &[HeapBlock], after: &[HeapBlock]) -> usize {
 }
 
 pub fn leak_command(pid: u32, interval: u64) {
+    let mem = os::provider();
     let snapshot1 = heap_mode(pid);
     let dur = Duration::new(interval, 0);
     #[cfg(target_os = "linux")]
-    let regions = walk_regions(pid);
+    let regions = mem.walk_regions(pid);
 
     #[cfg(target_os = "linux")]
     let trace = {
@@ -490,11 +491,12 @@ pub fn leak_command(pid: u32, interval: u64) {
 }
 
 pub fn leak_command_tui(pid: u32, interval: u64) -> Vec<Line<'static>> {
+    let mem = os::provider();
     let mut output: Vec<Line> = vec![];
     let snapshot1 = heap_mode(pid);
     let dur = Duration::new(interval, 0);
     #[cfg(target_os = "linux")]
-    let regions = walk_regions(pid);
+    let regions = mem.walk_regions(pid);
 
     #[cfg(target_os = "linux")]
     let trace = {
