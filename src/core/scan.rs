@@ -552,6 +552,8 @@ pub fn leak_command_tui(pid: u32, interval: u64) -> Vec<Line<'static>> {
     {
         let results = diff_snapshots(&snapshot1, &snapshot2);
         let new_bytes: usize = results.iter().map(|(_, size)| size).sum();
+        let freed = diff_freed_memory(&snapshot1, &snapshot2);
+        let new_freed_memory: usize = freed.iter().map(|(_, size)| size).sum();
         output.push(Line::raw(format!(
             "snapshot 1 → snapshot 2 ({}s interval)",
             interval
@@ -561,6 +563,7 @@ pub fn leak_command_tui(pid: u32, interval: u64) -> Vec<Line<'static>> {
             "new bytes       : {} KB",
             new_bytes / 1024
         )));
+        output.push(Line::raw(format!("freed memory : {}", new_freed_memory / 1024)));
         if results.is_empty() {
             output.push(Line::from(vec![Span::styled(
                 "no leak detected",
