@@ -1,5 +1,5 @@
-use crate::os::walk_heap;
-use crate::os::walk_regions;
+use crate::os;
+use crate::os::MemoryProvider;
 use crate::types::RegionEntry;
 use crate::types::RegionKind::*;
 use crate::types::RegionProtect::*;
@@ -19,7 +19,8 @@ use std::time::Duration;
 /// * `json` - Whether to output JSON
 /// * `output` - Optional file path for JSON output
 pub fn scan_with_modes(mode: &String, pid: u32, json: bool, output: Option<String>) {
-    let regions = walk_regions(pid);
+    let mem = os::provider();
+    let regions = mem.walk_regions(pid);
     if !json {
         // legend
         println!(
@@ -154,8 +155,9 @@ pub fn scan_with_modes_tui(
     json: bool,
     output_path: Option<&str>,
 ) -> Vec<Line<'static>> {
+    let mem = os::provider();
     let mut output: Vec<Line> = vec![];
-    let regions = walk_regions(pid);
+    let regions = mem.walk_regions(pid);
 
     if !json && !(mode != "-h" || mode != "-v") {
         output.push(Line::from(vec![
@@ -310,7 +312,8 @@ pub fn scan_with_modes_tui(
 }
 
 fn heap_mode(pid: u32) -> Vec<HeapBlock> {
-    let heaps = walk_heap(pid);
+    let mem = os::provider();
+    let heaps = mem.walk_heap(pid);
     heaps
 }
 

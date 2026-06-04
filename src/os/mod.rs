@@ -2,23 +2,27 @@
 mod windows;
 
 #[cfg(target_os = "windows")]
-pub use windows::*;
+pub use windows::find_blocks_with_pointers;
 
-//pub use windows::WindowsMemory as PlatformMemory;
+#[cfg(target_os = "windows")]
+pub use windows::walk_heap_granular;
+
+#[cfg(target_os = "windows")]
+pub use windows::WindowsMemory as PlatformMemory;
 
 #[cfg(target_os = "linux")]
 mod linux;
 
 #[cfg(target_os = "linux")]
-pub use linux::*;
+pub use linux::LinuxMemory as PlatformMemory;
 
 //pub use linux::LinuxMemory as PlatformMemory;
 
 use crate::types::{HeapBlock, ModuleInfo, Region};
 
-//pub fn provider() -> PlatformMemory {
-//    PlatformMemory
-//}
+pub fn provider() -> PlatformMemory {
+    PlatformMemory
+}
 
 pub trait MemoryProvider {
     fn walk_regions(&self, pid: u32) -> Vec<Region>;

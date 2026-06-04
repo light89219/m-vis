@@ -1,8 +1,9 @@
 use crate::core::scan::leak_command_tui;
 use crate::core::scan::scan_with_modes_tui;
-use ratatui::text::Line;
-
+use crate::os;
+use crate::os::MemoryProvider;
 use crate::types::HeapBlock;
+use ratatui::text::Line;
 
 pub struct ScanResult {
     pub lines: Vec<Line<'static>>,
@@ -123,6 +124,7 @@ pub fn scan(args: Vec<&str>) -> Result<ScanResult, String> {
 }
 
 pub fn modules(args: Vec<&str>) -> Result<Vec<String>, String> {
+    let mem = os::provider();
     let queryp = args[1];
     let pid = find_pid(queryp.to_string()).map_err(|e| e.to_string())?;
     let mut flag = "".to_string();
@@ -130,7 +132,7 @@ pub fn modules(args: Vec<&str>) -> Result<Vec<String>, String> {
         flag = args[2].to_string();
     }
     let mut output: Vec<String> = vec![];
-    let results = crate::os::list_modules(pid, flag);
+    let results = mem.list_modules(pid, flag);
     output = results
         .into_iter()
         .map(|result| format!("{}: {:?}", result.name, result.status))
@@ -193,17 +195,18 @@ mod tests {
 }
 
 fn get_heap_blocks(pid: u32, granular: bool) -> Vec<HeapBlock> {
+    let mem = os::provider();
     #[cfg(target_os = "windows")]
     {
         if granular {
             crate::os::walk_heap_granular(pid)
         } else {
-            crate::os::walk_heap(pid)
+            mem.walk_heap(pid)
         }
     }
 
     #[cfg(target_os = "linux")]
     {
-        crate::os::walk_heap(pid)
+        mem.walk_heap(pid)
     }
 }

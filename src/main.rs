@@ -11,6 +11,8 @@
 //! ```
 //!
 use mvis::core::scan::{leak_command, leak_m_command, scan_with_modes};
+use mvis::os;
+use mvis::os::MemoryProvider;
 use mvis::ui::commands::process_is_visible;
 use mvis::ui::tui::tui_main;
 use std::env;
@@ -29,6 +31,7 @@ fn main() {
 fn run() -> Result<(), String> {
     let args: Vec<String> = env::args().collect();
     let command = get_arg(&args, 1, "command")?;
+    let mem = os::provider();
 
     match command {
         "scan" => {
@@ -85,7 +88,7 @@ fn run() -> Result<(), String> {
             let pid = find_pid(name.to_string())?;
             let flag = get_arg(&args, 3, "flag (-t)")?;
 
-            let modules = mvis::os::list_modules(pid, flag.to_string());
+            let modules = mem.list_modules(pid, flag.to_string());
             println!(
                 "{:<18} {:<10} {:<10} {}",
                 "ADDRESS", "SIZE", "STATUS", "NAME"
@@ -160,7 +163,7 @@ fn run() -> Result<(), String> {
         "wintrace" => {
             let queryp = get_arg(&args, 2, "process name")?;
             let pid = find_pid(queryp.to_string())?;
-            let regions = mvis::os::walk_regions(pid);
+            let regions = mem.walk_regions(pid);
             match mvis::core::stack_trace::StackTrace::capture(pid, &regions) {
                 Ok(trace) => {
                     println!("stack trace for {} (pid: {})", queryp, pid);
