@@ -20,12 +20,9 @@ Our design philosophy is built around simplicity and accessibility because **We 
 Early but functional. Core scanning and leak detection work on both platforms. See the roadmap below for what's coming.
 
 ### New TUI
-<img width="1919" height="1017" alt="Screenshot 2026-05-10 212750" src="https://github.com/user-attachments/assets/30f14282-d54b-4cf2-8f07-8ba215c31725" />
-. <br>
-. <br>
-. <br>
+<img width="1919" height="986" alt="Screenshot 2026-06-05 173344" src="https://github.com/user-attachments/assets/31d98a81-a951-486c-a51e-9abc7b198406" />
 
-<img width="1919" height="1024" alt="Screenshot 2026-05-10 212718" src="https://github.com/user-attachments/assets/a6c0b624-dc65-4eb8-bc47-95bc89b9036c" />
+<img width="1919" height="980" alt="Screenshot 2026-06-05 173607" src="https://github.com/user-attachments/assets/fea2c2f9-8f5d-48fb-b13f-21b6b30656e3" />
 
 ---
 
@@ -34,7 +31,7 @@ Early but functional. Core scanning and leak detection work on both platforms. S
 -  **Heap-Level Analysis**: Dive into heap structures for detailed debugging.
 -  **DLL Tracking**: Monitor and list all DLLs loaded by a target.
 -  **Memory Leak Detection**: Identify and monitor processes with growing, unreleased allocations.
--  **Stack Tracing**: Capture call stacks to pinpoint allocation sources and trace execution paths.
+-  **Leak Delta Chart**: mvis includes a real-time leak delta chart that visualizes memory allocation trends over time directly in the TUI.
 -  **Supported OS**: Windows, Linux
 
 ## Usage
@@ -74,7 +71,6 @@ Output: <br>
 . <br>
 . <br>
 <img width="1091" height="267" alt="Screenshot 2026-05-01 181929" src="https://github.com/user-attachments/assets/52563bf0-7b6b-4875-8eb1-ed692622aed5" />
-
 
 ---
 
