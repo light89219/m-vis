@@ -49,8 +49,16 @@ pub fn scan_with_modes(mode: &String, pid: u32, json: bool, output: Option<Strin
             let free_bytes: usize = free.par_iter().map(|b| b.size).sum();
 
             println!("total blocks : {}", blocks.len());
-            println!("used blocks  : {} ({})", used.len(), format_bytes(used_bytes as u64));
-            println!("free blocks  : {} ({})", free.len(), format_bytes(free_bytes as u64));
+            println!(
+                "used blocks  : {} ({})",
+                used.len(),
+                format_bytes(used_bytes as u64)
+            );
+            println!(
+                "free blocks  : {} ({})",
+                free.len(),
+                format_bytes(free_bytes as u64)
+            );
 
             let largest_free = blocks
                 .iter()
@@ -71,7 +79,11 @@ pub fn scan_with_modes(mode: &String, pid: u32, json: bool, output: Option<Strin
             let mut sorted = used.clone();
             sorted.sort_by(|a, b| b.size.cmp(&a.size));
             for block in sorted.iter().take(10) {
-                println!("  0x{:x}  {}", block.address, format_bytes(block.size as u64));
+                println!(
+                    "  0x{:x}  {}",
+                    block.address,
+                    format_bytes(block.size as u64)
+                );
             }
 
             // size distribution
@@ -471,10 +483,16 @@ pub fn leak_command_tui(pid: u32, interval: u64) -> (Vec<Line<'static>>, LeakDel
     };
     let leak_delta_output = leak_delta.get_diagnostic_line();
     output.push(Line::raw(format!("{}", leak_delta_output.0)));
-    output.push(Line::raw(format!("heap growth: {}", format_bytes(growth as u64))));
+    output.push(Line::raw(format!(
+        "heap growth: {}",
+        format_bytes(growth as u64)
+    )));
     if growth > 0 {
         output.push(Line::from(Span::styled(
-            format!("leak suspected — heap grew by {}", format_bytes(growth as u64)),
+            format!(
+                "leak suspected — heap grew by {}",
+                format_bytes(growth as u64)
+            ),
             Style::default().fg(Color::Red),
         )));
     } else {

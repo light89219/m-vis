@@ -557,7 +557,11 @@ impl App {
                         )));
                         for block in new_blocks.iter().take(5) {
                             self.push_line(Line::from(Span::styled(
-                                format!("  + 0x{:x}  {}", block.address, format_bytes(block.size as u64)),
+                                format!(
+                                    "  + 0x{:x}  {}",
+                                    block.address,
+                                    format_bytes(block.size as u64)
+                                ),
                                 Style::default().fg(Color::Green),
                             )));
                         }

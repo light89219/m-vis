@@ -4,8 +4,8 @@ use crate::core::scan::scan_with_modes_tui;
 use crate::os;
 use crate::os::MemoryProvider;
 use crate::types::HeapBlock;
-use ratatui::text::Line;
 use crate::utils::formatting::format_bytes;
+use ratatui::text::Line;
 
 pub struct ScanResult {
     pub lines: Vec<Line<'static>>,

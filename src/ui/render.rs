@@ -117,4 +117,3 @@ pub fn render_verbose_tui(regions: &[Region], labels: &[&str]) -> Vec<Line<'stat
     }
     output
 }
-
