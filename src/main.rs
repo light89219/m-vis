@@ -140,21 +140,16 @@ fn run() -> Result<(), String> {
             }
         }
         "help" | "--help" | "-h" => {
-            println!("commands");
-            println!("scan [app.exe] [modes] [json] [output]");
-            println!("leak [app.exe] [duration]");
-            println!("leak-m [app.exe] [duration] [samples]");
-            println!("modules [app.exe]");
-            #[cfg(target_os = "windows")]
-            println!("wintrace [app.exe]");
-            println!("help");
-            println!("version");
-            println!("list [filter]");
-            println!("");
-            println!("modes");
-            println!("-h :Heap Mode");
-            println!("-a :All Mode");
-            println!("-v :Verbose Mode");
+            match args.get(2).map(|s| s.as_str()) {
+                Some("scan") => print_help_scan(),
+                Some("leak") => print_help_leak(),
+                Some("leak-m") => print_help_leak_m(),
+                Some("list") => print_help_list(),
+                Some("modules") => print_help_modules(),
+                #[cfg(target_os = "windows")]
+                Some("wintrace") => print_help_wintrace(),
+                _ => print_help_all(),
+            }
         }
         "version" | "--version" | "-v" => {
             println!("{}", mvis::VERSION);
@@ -233,6 +228,109 @@ fn parse_positive_u64_arg(args: &[String], index: usize, name: &str) -> Result<u
         return Err(format!("{} must be greater than 0", name));
     }
     Ok(parsed)
+}
+
+fn print_help_all() {
+    println!("Usage: mvis <command> [args]");
+    println!();
+    println!("Commands:");
+    println!("  {:<14} {}", "scan", "Analyze memory layout of a process");
+    println!("  {:<14} {}", "leak", "Detect memory leaks in a process");
+    println!("  {:<14} {}", "leak-m", "Detect leaks across multiple samples");
+    println!("  {:<14} {}", "list", "Show running processes by memory usage");
+    println!("  {:<14} {}", "modules", "List loaded modules for a process");
+    #[cfg(target_os = "windows")]
+    println!("  {:<14} {}", "wintrace", "Capture a stack trace (Windows only)");
+    println!("  {:<14} {}", "tui", "Launch the interactive TUI");
+    println!("  {:<14} {}", "help [cmd]", "Show command help");
+    println!("  {:<14} {}", "version", "Show version");
+    println!();
+    println!("Run 'mvis help <command>' for command-specific help.");
+}
+
+fn print_help_scan() {
+    println!("Usage: mvis scan <process> <mode> [-json] [output]");
+    println!();
+    println!("Analyze the memory layout of a running process.");
+    println!();
+    println!("Arguments:");
+    println!("  <process>   Process name (e.g. notepad.exe)");
+    println!("  <mode>      -h  Heap mode");
+    println!("              -a  All regions");
+    println!("              -v  Verbose output");
+    println!("  [-json]     Output results as JSON");
+    println!("  [output]    Write output to a file path");
+    println!();
+    println!("Examples:");
+    println!("  mvis scan notepad.exe -h");
+    println!("  mvis scan notepad.exe -a -json results.json");
+}
+
+fn print_help_leak() {
+    println!("Usage: mvis leak <process> <interval>");
+    println!();
+    println!("Monitor a process for memory leaks over time.");
+    println!();
+    println!("Arguments:");
+    println!("  <process>    Process name (e.g. my_app.exe)");
+    println!("  <interval>   Sampling interval in seconds (must be > 0)");
+    println!();
+    println!("Examples:");
+    println!("  mvis leak my_app.exe 10");
+    println!("  mvis leak chrome.exe 5");
+}
+
+fn print_help_leak_m() {
+    println!("Usage: mvis leak-m <process> <interval> <samples>");
+    println!();
+    println!("Detect memory leaks using a fixed number of samples.");
+    println!();
+    println!("Arguments:");
+    println!("  <process>    Process name (e.g. my_app.exe)");
+    println!("  <interval>   Seconds between samples (must be > 0)");
+    println!("  <samples>    Number of samples to collect (must be > 0)");
+    println!();
+    println!("Examples:");
+    println!("  mvis leak-m my_app.exe 5 12");
+}
+
+fn print_help_list() {
+    println!("Usage: mvis list [filter]");
+    println!();
+    println!("Show the top 20 running processes sorted by memory usage.");
+    println!();
+    println!("Arguments:");
+    println!("  [filter]   Optional name filter (case-insensitive)");
+    println!();
+    println!("Examples:");
+    println!("  mvis list");
+    println!("  mvis list chrome");
+}
+
+fn print_help_modules() {
+    println!("Usage: mvis modules <process> <flag>");
+    println!();
+    println!("List loaded modules for a process and check for tampering.");
+    println!();
+    println!("Arguments:");
+    println!("  <process>   Process name (e.g. notepad.exe)");
+    println!("  <flag>      -t  Include tamper detection");
+    println!();
+    println!("Examples:");
+    println!("  mvis modules notepad.exe -t");
+}
+
+#[cfg(target_os = "windows")]
+fn print_help_wintrace() {
+    println!("Usage: mvis wintrace <process>");
+    println!();
+    println!("Capture a stack trace for a running process (Windows only).");
+    println!();
+    println!("Arguments:");
+    println!("  <process>   Process name (e.g. my_app.exe)");
+    println!();
+    println!("Examples:");
+    println!("  mvis wintrace my_app.exe");
 }
 
 #[cfg(test)]
