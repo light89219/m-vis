@@ -225,7 +225,7 @@ fn get_heap_blocks(pid: u32, _granular: bool) -> Vec<HeapBlock> {
     let mem = os::provider();
     #[cfg(target_os = "windows")]
     {
-        if granular {
+        if _granular {
             crate::os::walk_heap_granular(pid)
         } else {
             mem.walk_heap(pid)

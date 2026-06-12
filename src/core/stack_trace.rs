@@ -54,10 +54,10 @@ impl StackTrace {
     /// Dispatches to the platform-specific implementation (Linux via ptrace, Windows via DbgHelp).
     pub fn capture(_pid: u32, _regions: &[crate::types::Region]) -> Result<Self, String> {
         #[cfg(target_os = "linux")]
-        return linux::capture(pid, regions);
+        return linux::capture(_pid, _regions);
 
         #[cfg(target_os = "windows")]
-        return windows::capture(pid, regions);
+        return windows::capture(_pid, _regions);
 
         #[cfg(not(any(target_os = "linux", target_os = "windows")))]
         Err("stack trace not supported on this platform".into())
