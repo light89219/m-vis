@@ -42,7 +42,7 @@ fn bench_leak_sample(c: &mut Criterion) {
     group.sample_size(50);
     group.measurement_time(std::time::Duration::from_secs(10));
     group.sampling_mode(criterion::SamplingMode::Flat);
-    
+
     for size in [1000, 10_000, 100_000].iter() {
         let before = generate_heap_blocks(*size);
         let mut after = before.clone();
@@ -90,7 +90,7 @@ fn bench_scan_large_process(c: &mut Criterion) {
     group.sample_size(50);
     group.measurement_time(std::time::Duration::from_secs(10));
     group.sampling_mode(criterion::SamplingMode::Flat);
-    
+
     let pid = process::id();
 
     // Note: This benchmark depends on the OS memory API and the current state of the process.
