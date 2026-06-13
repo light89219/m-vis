@@ -95,7 +95,7 @@ impl MemoryProvider for MacMemory {
             let name = self.get_region_name(pid, address as usize);
 
             let refined_kind = if !name.is_empty() {
-                if name.contains(".dylib") || name.contains("Frameworks") {
+                if name.contains(".dylib") || name.contains("Frameworks") || name.contains("dyld") {
                     RegionKind::Mapped
                 } else {
                     RegionKind::Image
