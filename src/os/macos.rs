@@ -46,8 +46,7 @@ impl MemoryProvider for MacMemory {
     fn walk_regions(&self, pid: u32) -> Vec<Region> {
         let task = match self.get_task_port(pid) {
             Ok(t) => t,
-            Err(e) => {
-                eprintln!("{}", e);
+            Err(_) => {
                 return vec![];
             }
         };
@@ -124,12 +123,24 @@ impl MemoryProvider for MacMemory {
     fn walk_heap(&self, pid: u32) -> Vec<HeapBlock> {
         let regions = self.walk_regions(pid);
         let mut heap_blocks = Vec::new();
+        let mut is_after_guard = false;
 
         for r in regions {
+            if r.protect == RegionProtect::Guard {
+                is_after_guard = true;
+                continue;
+            }
+
             if r.kind == RegionKind::Private
                 && r.protect == RegionProtect::ReadWrite
                 && r.name.is_empty()
             {
+                if is_after_guard {
+                    // Likely a thread stack, skip it
+                    is_after_guard = false;
+                    continue;
+                }
+
                 heap_blocks.push(HeapBlock {
                     address: r.base,
                     size: r.size,
@@ -137,6 +148,8 @@ impl MemoryProvider for MacMemory {
                     vm_protect: r.protect.clone(),
                 });
             }
+
+            is_after_guard = false;
         }
         heap_blocks
     }
@@ -150,7 +163,8 @@ impl MemoryProvider for MacMemory {
             if !r.name.is_empty()
                 && (r.kind == RegionKind::Image
                     || r.name.ends_with(".dylib")
-                    || r.name.ends_with(".bundle"))
+                    || r.name.ends_with(".bundle")
+                    || r.name.contains("dyld_shared_cache"))
             {
                 if seen.insert(r.name.clone()) {
                     let path = Path::new(&r.name);
