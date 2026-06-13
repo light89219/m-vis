@@ -386,7 +386,6 @@ fn classify(regions: &[Region]) -> Vec<&str> {
             "[vvar]" => "mapped",
             "[vdso]" => "image",
             name if name.contains(".so") => "image",
-            name if !name.is_empty() => "image",
             _ => match regions[i].kind {
                 Image => "image",
                 Mapped => "mapped",
