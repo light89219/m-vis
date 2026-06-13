@@ -223,7 +223,9 @@ fn find_pid(name: String) -> Result<u32, AppError> {
             }
             use std::io::{self, Write};
             print!("Select [1-{}]: ", candidates.len());
-            io::stdout().flush().map_err(|e| AppError::Other(e.to_string()))?;
+            io::stdout()
+                .flush()
+                .map_err(|e| AppError::Other(e.to_string()))?;
             let mut input = String::new();
             io::stdin()
                 .read_line(&mut input)
@@ -236,8 +238,7 @@ fn find_pid(name: String) -> Result<u32, AppError> {
                 return Err(AppError::InvalidArg(format!(
                     "selection must be between 1 and {}",
                     candidates.len()
-                )
-                ));
+                )));
             }
             Ok(candidates[choice - 1].1)
         }
