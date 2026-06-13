@@ -85,27 +85,25 @@ impl MemoryProvider for MacMemory {
                 info.protection & VM_PROT_WRITE != 0,
                 info.protection & VM_PROT_EXECUTE != 0,
             ) {
-                (false, false, false) => RegionProtect::NoAccess,
+                (false, false, false) => RegionProtect::Guard, // On macOS, unmapped/protected gaps are guards
                 (true, false, false) => RegionProtect::Readonly,
                 (true, true, false) => RegionProtect::ReadWrite,
                 (_, _, true) => RegionProtect::Execute,
                 _ => RegionProtect::Other,
             };
 
-            let kind = if info.shared != 0 {
+            let name = self.get_region_name(pid, address as usize);
+
+            let refined_kind = if !name.is_empty() {
+                if name.contains(".dylib") || name.contains("Frameworks") {
+                    RegionKind::Mapped
+                } else {
+                    RegionKind::Image
+                }
+            } else if info.shared != 0 {
                 RegionKind::Mapped
             } else {
                 RegionKind::Private
-            };
-
-            let name = self.get_region_name(pid, address as usize);
-
-            let refined_kind = if !name.is_empty()
-                && (name.contains(".dylib") || protect == RegionProtect::Execute)
-            {
-                RegionKind::Image
-            } else {
-                kind
             };
 
             regions.push(Region {
