@@ -1082,6 +1082,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strip-ansi-escapes",
+ "strsim",
  "sysinfo",
  "windows",
 ]
