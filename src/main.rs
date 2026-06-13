@@ -113,9 +113,10 @@ fn run() -> Result<(), String> {
         "modules" => {
             let name = get_arg(&args, 2, "process name")?;
             let pid = find_pid(name.to_string())?;
-            let flag = get_arg(&args, 3, "flag (-t)")?;
+            let _empty = String::new();
+            let flag = args.get(3).map(|s| s.as_str()).unwrap_or("").to_string();
 
-            let modules = mem.list_modules(pid, flag.to_string());
+            let modules = mem.list_modules(pid, flag.to_string()).unwrap_or_default();
             println!(
                 "{:<18} {:<10} {:<10} {}",
                 "ADDRESS", "SIZE", "STATUS", "NAME"
@@ -183,7 +184,7 @@ fn run() -> Result<(), String> {
         "wintrace" => {
             let queryp = get_arg(&args, 2, "process name")?;
             let pid = find_pid(queryp.to_string())?;
-            let regions = mem.walk_regions(pid);
+            let regions = mem.walk_regions(pid).unwrap_or_default();
             match mvis::core::stack_trace::StackTrace::capture(pid, &regions) {
                 Ok(trace) => {
                     println!("stack trace for {} (pid: {})", queryp, pid);

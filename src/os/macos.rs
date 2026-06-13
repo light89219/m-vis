@@ -8,6 +8,7 @@ use mach2::traps::mach_task_self;
 use mach2::vm::mach_vm_region;
 use mach2::vm_prot::{VM_PROT_EXECUTE, VM_PROT_READ, VM_PROT_WRITE};
 use mach2::vm_region::{vm_region_basic_info_64, vm_region_info_t, VM_REGION_BASIC_INFO_64};
+use mach2::vm_types::natural_t;
 use std::collections::HashSet;
 use std::mem;
 use std::path::Path;
@@ -23,12 +24,19 @@ unsafe extern "C" {
 pub struct MacMemory;
 
 impl MacMemory {
-    fn get_task_port(&self, pid: u32) -> Result<mach_port_t, &'static str> {
+    pub fn get_task_port(&self, pid: u32) -> Result<mach_port_t, String> {
         let mut task: mach_port_t = 0;
         unsafe {
             let res = task_for_pid(mach_task_self(), pid as libc::pid_t, &mut task);
             if res != KERN_SUCCESS {
-                return Err("Failed to get task port. macOS requires 'sudo' or 'task_for_pid-allow' entitlement to inspect processes.");
+                return Err(format!(
+                    "task_for_pid failed (kern_return={}). \
+                     This binary is not signed with the 'com.apple.security.cs.debugger' entitlement. \
+                     Run: codesign --force --sign - --entitlements mvis.entitlements target/debug/mvis\n\
+                     Note: Apple platform apps (Safari, WebKit) and Hardened Runtime apps (WhatsApp) \
+                     remain protected even with the entitlement.",
+                    res
+                ));
             }
         }
         Ok(task)
@@ -43,22 +51,19 @@ impl MacMemory {
 }
 
 impl MemoryProvider for MacMemory {
-    fn walk_regions(&self, pid: u32) -> Vec<Region> {
-        let task = match self.get_task_port(pid) {
-            Ok(t) => t,
-            Err(_) => {
-                return vec![];
-            }
-        };
+    fn walk_regions(&self, pid: u32) -> Result<Vec<Region>, String> {
+        let task = self.get_task_port(pid)?;
 
         let mut regions = Vec::new();
-        let mut address: mach2::vm_types::mach_vm_address_t = 0;
+        let mut address: mach2::vm_types::mach_vm_address_t = 1; // start at 1 to skip the zero page
 
         loop {
             let mut size: mach2::vm_types::mach_vm_size_t = 0;
             let mut info: vm_region_basic_info_64 = unsafe { mem::zeroed() };
-            let mut info_count = mem::size_of::<vm_region_basic_info_64>() as mach2::message::mach_msg_type_number_t
-                / mem::size_of::<i32>() as mach2::message::mach_msg_type_number_t;
+            // FIX: use natural_t (u32) as the unit, not i32
+            let mut info_count =
+                (mem::size_of::<vm_region_basic_info_64>() / mem::size_of::<natural_t>())
+                    as mach2::message::mach_msg_type_number_t;
             let mut object_name: mach_port_t = 0;
 
             let res = unsafe {
@@ -74,17 +79,25 @@ impl MemoryProvider for MacMemory {
             };
 
             if res != KERN_SUCCESS {
-                break; // End of address space or error
+                break;
+            }
+
+            // FIX: guard against zero-size regions causing an infinite loop
+            if size == 0 {
+                address = address.saturating_add(1);
+                continue;
             }
 
             let state = RegionState::Committed;
 
+            // FIX: VM_PROT_NONE is not the same as a guard page on macOS.
+            // We label it NoAccess and let classify() in scan.rs sort it out.
             let protect = match (
                 info.protection & VM_PROT_READ != 0,
                 info.protection & VM_PROT_WRITE != 0,
                 info.protection & VM_PROT_EXECUTE != 0,
             ) {
-                (false, false, false) => RegionProtect::Guard, // On macOS, unmapped/protected gaps are guards
+                (false, false, false) => RegionProtect::NoAccess,
                 (true, false, false) => RegionProtect::Readonly,
                 (true, true, false) => RegionProtect::ReadWrite,
                 (_, _, true) => RegionProtect::Execute,
@@ -102,10 +115,15 @@ impl MemoryProvider for MacMemory {
             }
 
             let refined_kind = if !name.is_empty() {
-                if name.contains(".dylib") || name.contains("Frameworks") || name.contains("dyld") {
-                    RegionKind::Mapped
-                } else {
+                if name.contains(".dylib")
+                    || name.contains(".bundle")
+                    || name.contains("Frameworks")
+                    || name.contains("dyld")
+                    || name.contains("dyld_shared_cache")
+                {
                     RegionKind::Image
+                } else {
+                    RegionKind::Mapped
                 }
             } else if info.shared != 0 {
                 RegionKind::Mapped
@@ -125,17 +143,18 @@ impl MemoryProvider for MacMemory {
             address = address.saturating_add(size);
         }
 
-        regions
+        Ok(regions)
     }
 
-    fn walk_heap(&self, pid: u32) -> Vec<HeapBlock> {
-        let regions = self.walk_regions(pid);
+    fn walk_heap(&self, pid: u32) -> Result<Vec<HeapBlock>, String> {
+        let regions = self.walk_regions(pid)?;
         let mut heap_blocks = Vec::new();
-        let mut is_after_guard = false;
 
-        for r in regions {
-            if r.protect == RegionProtect::Guard {
-                is_after_guard = true;
+        // On macOS, guard pages follow the live stack (low→high iteration means
+        // guard comes AFTER live stack). We track the previous region's protection
+        // to detect the [live stack] → [guard] pattern and skip accordingly.
+        for r in &regions {
+            if r.protect == RegionProtect::NoAccess {
                 continue;
             }
 
@@ -143,12 +162,6 @@ impl MemoryProvider for MacMemory {
                 && r.protect == RegionProtect::ReadWrite
                 && r.name.is_empty()
             {
-                if is_after_guard {
-                    // Likely a thread stack, skip it
-                    is_after_guard = false;
-                    continue;
-                }
-
                 heap_blocks.push(HeapBlock {
                     address: r.base,
                     size: r.size,
@@ -156,26 +169,53 @@ impl MemoryProvider for MacMemory {
                     vm_protect: r.protect.clone(),
                 });
             }
-
-            is_after_guard = false;
         }
-        heap_blocks
+
+        // Apply lookahead fix: remove the last pushed block if the current is NoAccess.
+        // We will just recreate the list to be clean.
+        let mut final_heap_blocks = Vec::new();
+        for i in 0..regions.len() {
+            let r = &regions[i];
+            if r.kind == RegionKind::Private
+                && r.protect == RegionProtect::ReadWrite
+                && r.name.is_empty()
+            {
+                // Lookahead
+                let mut is_stack = false;
+                if i + 1 < regions.len() {
+                    let next = &regions[i + 1];
+                    if next.protect == RegionProtect::NoAccess {
+                        is_stack = true;
+                    }
+                }
+                if !is_stack {
+                    final_heap_blocks.push(HeapBlock {
+                        address: r.base,
+                        size: r.size,
+                        is_free: false,
+                        vm_protect: r.protect.clone(),
+                    });
+                }
+            }
+        }
+
+        Ok(final_heap_blocks)
     }
 
-    fn list_modules(&self, pid: u32, _flag: String) -> Vec<ModuleInfo> {
-        let regions = self.walk_regions(pid);
+    fn list_modules(&self, pid: u32, _flag: String) -> Result<Vec<ModuleInfo>, String> {
+        let regions = self.walk_regions(pid)?;
         let mut modules = Vec::new();
         let mut seen = HashSet::new();
 
         for r in regions {
-            if !r.name.is_empty()
-                && (r.kind == RegionKind::Image
-                    || r.name.ends_with(".dylib")
-                    || r.name.ends_with(".bundle")
-                    || r.name.contains("dyld_shared_cache")
-                    || r.name.contains("Frameworks")
-                    || r.name.contains("dyld"))
-            {
+            let is_module = r.kind == RegionKind::Image
+                || r.name.ends_with(".dylib")
+                || r.name.ends_with(".bundle")
+                || r.name.contains("dyld_shared_cache")
+                || r.name.contains("Frameworks")
+                || r.name.contains("dyld");
+
+            if !r.name.is_empty() && is_module {
                 if seen.insert(r.name.clone()) {
                     let path = Path::new(&r.name);
                     let file_name = path
@@ -184,22 +224,16 @@ impl MemoryProvider for MacMemory {
                         .to_string_lossy()
                         .to_string();
 
-                    let is_injected = false; // Advanced heuristic later
-
                     modules.push(ModuleInfo {
                         base: r.base,
                         size: r.size,
                         name: file_name,
                         path: r.name,
-                        status: if is_injected {
-                            ModuleStatus::Injected
-                        } else {
-                            ModuleStatus::Ok
-                        },
+                        status: ModuleStatus::Ok,
                     });
                 }
             }
         }
-        modules
+        Ok(modules)
     }
 }

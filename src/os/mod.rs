@@ -32,11 +32,11 @@ pub fn provider() -> PlatformMemory {
 /// Abstraction over OS-specific memory inspection APIs.
 pub trait MemoryProvider {
     /// Returns all virtual memory regions mapped into the process with the given `pid`.
-    fn walk_regions(&self, pid: u32) -> Vec<Region>;
+    fn walk_regions(&self, pid: u32) -> Result<Vec<Region>, String>;
     /// Returns all heap blocks (both used and free) for the process with the given `pid`.
-    fn walk_heap(&self, pid: u32) -> Vec<HeapBlock>;
+    fn walk_heap(&self, pid: u32) -> Result<Vec<HeapBlock>, String>;
     /// Returns loaded modules for the process with the given `pid`.
     ///
     /// Pass `"-t"` as `flag` to restrict the output to tampered or injected modules only.
-    fn list_modules(&self, pid: u32, flag: String) -> Vec<ModuleInfo>;
+    fn list_modules(&self, pid: u32, flag: String) -> Result<Vec<ModuleInfo>, String>;
 }
