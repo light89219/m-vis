@@ -471,12 +471,12 @@ mod tests {
 
     #[test]
     fn find_pid_reports_missing_process() {
-        let result = find_pid("mvis_process_that_should_not_exist_12345".to_string());
+        let result = find_pid("zzzz_does_not_exist_9999_zzzz".to_string());
 
         assert_eq!(
             result,
             Err(AppError::ProcessNotFound(
-                "mvis_process_that_should_not_exist_12345".to_string()
+                "zzzz_does_not_exist_9999_zzzz".to_string()
             ))
         );
     }
