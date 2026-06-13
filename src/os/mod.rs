@@ -17,23 +17,10 @@ mod linux;
 pub use linux::LinuxMemory as PlatformMemory;
 
 #[cfg(target_os = "macos")]
-pub struct MacMemory;
+mod macos;
 
 #[cfg(target_os = "macos")]
-impl MemoryProvider for MacMemory {
-    fn walk_regions(&self, _pid: u32) -> Vec<Region> {
-        vec![]
-    }
-    fn walk_heap(&self, _pid: u32) -> Vec<HeapBlock> {
-        vec![]
-    }
-    fn list_modules(&self, _pid: u32, _flag: String) -> Vec<ModuleInfo> {
-        vec![]
-    }
-}
-
-#[cfg(target_os = "macos")]
-pub use MacMemory as PlatformMemory;
+pub use macos::MacMemory as PlatformMemory;
 
 use crate::types::{HeapBlock, ModuleInfo, Region};
 
