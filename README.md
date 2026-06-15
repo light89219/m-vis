@@ -5,7 +5,7 @@
 
 Welcome to **m-vis**. Memory debugging for developers who just want answers. Simple. Fast. Works everywhere.
 
-Existing tools are either platform-specific (Valgrind, WinDbg) or too complex for quick diagnostics. m-vis gives you deep memory insights with a single command across any platform.
+Existing tools are either platform specific (Valgrind, WinDbg) or too complex for quick diagnostics. m-vis gives you deep memory insights with a single command across any platform.
 
 Our design philosophy is built around simplicity and accessibility because **we believe memory debugging should be accessible, not a PhD requirement.**
 
@@ -13,9 +13,9 @@ Our design philosophy is built around simplicity and accessibility because **we 
 
 ---
 
-## 🏗 High-Level System Architecture
+## 🏗 System Architecture
 
-m-vis is built in Rust to provide native, blazing-fast performance without overhead. It abstracts away the complex OS-level memory APIs into a unified, cross-platform scanning engine.
+m-vis is built in Rust to provide native, blazing fast performance without overhead. It abstracts away the complex OS level memory APIs into a unified, cross platform scanning engine.
 
 ```mermaid
 graph TD
@@ -45,7 +45,7 @@ graph TD
 ## 🚀 Quick Start
 
 ### 1. Installation
-The fastest way to get started is downloading a pre-built binary from the [Releases](https://github.com/SickleFire/m-vis/releases) page.
+The fastest way to get started is downloading a pre built binary from the [Releases](https://github.com/SickleFire/m-vis/releases) page.
 If you have Rust installed, you can build from source:
 ```bash
 git clone https://github.com/SickleFire/m-vis
@@ -78,17 +78,17 @@ mvis leak notepad 10
 ## 🎨 Features & Capabilities
 
 - **Process Scanning**: Inspect memory allocations, mapped regions, and permissions of active processes.
-- **Heap-Level Analysis**: Dive deeply into heap structures and allocations for detailed debugging.
+- **Heap Level Analysis**: Dive deeply into heap structures and allocations for detailed debugging.
 - **DLL Tracking**: Monitor and list all dynamic libraries (DLLs/SOs/Dylibs) loaded by a target.
-- **Real-time Memory Leak Detection**: Identify and monitor processes with growing, unreleased memory allocations.
-- **Leak Delta Chart**: m-vis includes a real-time leak delta chart that visualizes memory allocation trends over time directly in the TUI.
+- **Real time Memory Leak Detection**: Identify and monitor processes with growing, unreleased memory allocations.
+- **Leak Delta Chart**: m-vis includes a real time leak delta chart that visualizes memory allocation trends over time directly in the TUI.
 - **Universal OS Support**: 100% native support for Windows, Linux, and macOS.
 
 ---
 
 ## 🔄 Core Workflows: How Leak Detection Works
 
-The leak detector doesn't just watch total RAM usage; it takes deep topological snapshots of the process heap and computes exact block-level deltas to find silent unreleased memory.
+The leak detector doesn't just watch total RAM usage; it takes deep topological snapshots of the process heap and computes exact block level deltas to find silent unreleased memory.
 
 ```mermaid
 sequenceDiagram
@@ -115,7 +115,7 @@ sequenceDiagram
 
 ## 🔐 macOS Security & Code Signing
 
-On macOS, `mvis` requires the `com.apple.security.cs.debugger` entitlement to inspect other processes due to Hardened Runtime restrictions. Even with `sudo`, inspecting third-party apps requires this entitlement.
+On macOS, `mvis` requires the `com.apple.security.cs.debugger` entitlement to inspect other processes due to Hardened Runtime restrictions. Even with `sudo`, inspecting third party apps requires this entitlement.
 
 To build and run `mvis` on macOS:
 ```bash
@@ -142,7 +142,7 @@ mvis scan notepad.exe -h
 # detect leaks
 mvis leak notepad.exe 10
 
-# multi-sample leak detection
+# multi sample leak detection
 mvis leak-m notepad.exe 10 3
 
 # list processes
