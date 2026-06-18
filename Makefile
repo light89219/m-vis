@@ -14,7 +14,8 @@ run-scan:
 	$(MAKE) build
 	sudo target/debug/mvis scan $(PROCESS) $(MODE)
 
-install: build-release
+install:
+	@test -f target/release/mvis || { echo "error: run 'make build-release' first"; exit 1; }
 	install -d $(DESTDIR)$(PREFIX)/bin
 	install -m 755 target/release/mvis $(DESTDIR)$(PREFIX)/bin/mvis
 	install -d $(DESTDIR)$(MANDIR)
