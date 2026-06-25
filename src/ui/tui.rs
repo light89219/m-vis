@@ -1512,11 +1512,11 @@ fn render_process_tree(
     for (i, row) in rows.iter().enumerate() {
         let indent = "  ".repeat(row.depth);
         let prefix = if row.has_children {
-            if row.is_collapsed { "▶ " } else { "▼ " }
+            if row.is_collapsed { "[+] " } else { "[-] " }
         } else if row.depth > 0 {
-            "├─"
+            "├─  "
         } else {
-            "  "
+            "    "
         };
 
         let mem_mb = row.memory as f64 / (1024.0 * 1024.0);
